@@ -1,128 +1,132 @@
-from flask import Flask,request,render_template,jsonify
-from pymongo import MongoClient
+from flask import Flask,render_template,redirect,request,session
+import urllib3
+import json
 
-client=MongoClient('127.0.0.1',27017)
-db=client['bms']
-registercollection=db['registerdata']
-donarcollection=db['donors']
-reqcollection=db['requirements']
+backendserver='http://127.0.0.1:2000'
 
-api=Flask(__name__)
+frontend=Flask(__name__)
+frontend.secret_key='litam'
 
-@api.route('/register',methods=['get'])
-def register():
-    Name=request.args.get('Name')
-    Email=request.args.get('Email')
-    Phone=request.args.get('Phone')
-    Gender=request.args.get('Gender')
-    BloodType=request.args.get('Bloodtype')
-    Password=request.args.get('Password')
-    
-    data={}
-    data['Name']=Name
-    data['Email']=Email
-    data['Phone']=Phone
-    data['Gender']=Gender
-    data['BloodType']=BloodType
-    data['Password']=Password
-    
-    query={'Phone':Phone}
-    for i in registercollection.find(query):
-        return('account exist')
-    registercollection.insert_one(data)
-    return('data stored')
+@frontend.route('/')
+def homePage():
+    return render_template('home.html')
 
-@api.route('/login',methods=['get'])
-def login():
-    UserID=request.args.get('UserID')
-    Password=request.args.get('Password')
-    query={'Phone':UserID}
-    for i in registercollection.find(query):
-        if (i['Password']==Password):
-            return 'True'
-    return 'False'
-        
-@api.route('/applicationform',methods=['get'])
-def application_form():
-    FullName=request.args.get('FullName')
-    Email=request.args.get('Email')
-    PhoneNumber=request.args.get('PhoneNumber')
-    Age=request.args.get('Age')
-    BloodType=request.args.get('BloodType')
-    DonationFrequency=request.args.get('DonationFrequency')
-    LastDonationDate=request.args.get('LastDonationDate')
-    AdditionalComments=request.args.get('AdditionalComments')
+@frontend.route('/signup')
+def signupPage():
+    return render_template('signup.html')
 
-    data={}
-    data['FullName']=FullName
-    data['Email']=Email
-    data['PhoneNumber']=PhoneNumber
-    data['Age']=Age
-    data['BloodType']=BloodType
-    data['DonationFrequency']=DonationFrequency
-    data['LastDonationDate']=LastDonationDate
-    data['AdditionalComments']=AdditionalComments
+@frontend.route('/signupform',methods=['post'])
+def signupform():
+    name=request.form['name']
+    email=request.form['email']
+    phone=request.form['phone']
+    gender=request.form['gender']
+    bloodtype=request.form['bloodtype']
+    password=request.form['password']
+    print(name,email,phone,gender,bloodtype,password)
+    apirequest=backendserver+'/register?Name='+name+'&Email='+email+'&Phone='+phone+'&Gender='+gender+'&Bloodtype='+bloodtype+'&Password='+password
+    http=urllib3.PoolManager()
+    response=http.request('get',apirequest)
+    response=response.data.decode('utf-8')
+    print(response)
+    if response=='account exist':
+        return render_template('signup.html',err='account already exist')
+    return render_template('signup.html',res='Registered')
 
-    query={'PhoneNumber':PhoneNumber}
-    for i in donarcollection.find(query):
-        return('already registered')
-    donarcollection.insert_one(data) 
-    return('registered')
-  
-@api.route('/requirementpage',methods=['get'])
-def requirement_page():
-    Name=request.args.get('Name')
-    Email=request.args.get('Email')
-    BloodType=request.args.get('BloodType')
-    Quantity=request.args.get('Quantity')
-    Urgency=request.args.get('Urgency')
-    RequirementDate=request.args.get('RequirementDate')
-    AdditionalInformation=request.args.get('AdditionalInformation')
+@frontend.route('/login')
+def loginPage():
+    return render_template('login.html')
 
-    data={}
-    data['Name']=Name
-    data['Email']=Email
-    data['BloodType']=BloodType
-    data['Quantity']=Quantity
-    data['Urgency']=Urgency
-    data['RequrirementDate']=RequirementDate
-    data['AdditionalInformation']=AdditionalInformation
-    query={'Email':Email,'RequrirementDate':RequirementDate}
-    for i in reqcollection.find(query):
-        return('already stored')
-    reqcollection.insert_one(data)
-    return('data stored')
+@frontend.route('/loginform',methods=['post'])
+def loginform():
+    userid=request.form['userid']
+    password=request.form['password']
+    print(userid,password)
+    apirequest=backendserver+'/login?UserID='+userid+'&Password='+password
+    http=urllib3.PoolManager()
+    response=http.request('get',apirequest)
+    response=response.data.decode('utf-8')
+    print(response)
+    if(response=='True'):
+        session['username']=userid
+        return redirect('/dashboard')
+        # return render_template('login.html',res='Login Valid')
+    else:
+        return render_template('login.html',err='Login Invalid')
 
-@api.route('/getdonors')
-def get_donors():
-    donors=[]
-    for i in donarcollection.find():
-        dummy=[]
-        dummy.append(i['FullName'])
-        dummy.append(i['BloodType'])
-        dummy.append(i['PhoneNumber'])
-        dummy.append(i['Email'])
-        donors.append(dummy)
-    return jsonify(donors)
+@frontend.route('/dashboard')
+def dashboardPage():
+    return render_template('application.html')
 
-@api.route('/getrequests')
-def get_requests():
-    req=[]
-    for i in reqcollection.find():
-        dummy=[]
-        dummy.append(i['Name'])
-        dummy.append(i['Email'])
-        dummy.append(i['BloodType'])
-        dummy.append(i['Quantity'])
-        dummy.append(i['Urgency'])
-        dummy.append(i['RequrirementDate'])
-        dummy.append(i['AdditionalInformation'])
-        req.append(dummy)
-    return jsonify(req)
+@frontend.route('/logout')
+def logoutpage():
+    session['username']=None
+    return redirect('/')
+
+@frontend.route('/applicationform',methods=['post'])
+def applicationform():
+    name=request.form['name']
+    email=request.form['email']
+    phone=request.form['phone']
+    age=request.form['age']
+    bloodtype=request.form['bloodtype']
+    donationFrequency=request.form['donationFrequency']
+    date=request.form['date']
+    additionalcomments=request.form['additionalcomments']
+    print(name,email,phone,age,bloodtype,donationFrequency,date,additionalcomments)
+    apirequest=backendserver+'/applicationform?FullName='+name+'&Email='+email+'&PhoneNumber='+phone+'&Age='+age+'&BloodType='+bloodtype+'&DonationFrequency='+donationFrequency+'&LastDonationDate='+date+'&AdditionalComments='+additionalcomments
+    http=urllib3.PoolManager()
+    response=http.request('get',apirequest)
+    response=response.data.decode('utf-8')
+    print(response)
+    if response=="already registered":
+        return render_template('application.html',err="You are already registered")
+    else:
+        return render_template('application.html',res='Registered Successfully')
+
+@frontend.route('/donors')
+def donors():
+    apirequest=backendserver+'/getdonors'
+    http=urllib3.PoolManager()
+    response=http.request('get',apirequest)
+    response=response.data.decode('utf-8')
+    response=json.loads(response)
+    print(response)
+    return render_template('donor.html',dashboard_data=response,l=len(response))
+
+@frontend.route('/announcements')
+def announcements():
+    return render_template('announcements.html')
+
+@frontend.route('/announcementsform',methods=['post'])
+def announcementsform():
+    name=request.form['name']
+    email=request.form['email']
+    bloodtype=request.form['bloodtype']
+    quantity=request.form['quantity']
+    urgency=request.form['urgency']
+    date=request.form['date']
+    message=request.form['message']
+    print(name,email,bloodtype,quantity,urgency,date,message)
+    apirequest=backendserver+'/requirementpage?Name='+name+'&Email='+email+'&BloodType='+bloodtype+'&Quantity='+quantity+'&Urgency='+urgency+'&RequirementDate='+date+'&AdditionalInformation='+message
+    http=urllib3.PoolManager()
+    response=http.request('get',apirequest)
+    response=response.data.decode('utf-8')
+    if response=='already stored':
+        return render_template('announcements.html',err='announcement already added')
+    else:
+        return render_template('announcements.html',res='announcement added')
+
+@frontend.route('/requests')
+def requests():
+    apirequest=backendserver+'/getrequests'
+    http=urllib3.PoolManager()
+    response=http.request('get',apirequest)
+    response=response.data.decode('utf-8')
+    response=json.loads(response)
+    print(response)
+    return render_template('requests.html',dashboard_data=response,l=len(response))
+
 
 if __name__=="__main__":
-    api.run(
-        host='0.0.0.0',
-        port=2000,
-        debug=True
-    )
+    frontend.run(host='0.0.0.0',port=5001,debug=True)
